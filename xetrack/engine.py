@@ -476,3 +476,9 @@ try:
     __all__.append('DuckDBEngine')
 except ImportError:
     DuckDBEngine = None
+
+try:
+    from xetrack.turso import TursoEngine
+    __all__.append('TursoEngine')
+except ImportError:
+    TursoEngine = None

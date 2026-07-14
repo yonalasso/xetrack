@@ -56,7 +56,7 @@ class Tracker:
         compress: bool = False,
         warnings: bool = True,
         git_root: Optional[str] = None,
-        engine: Literal["duckdb", "sqlite"] = "sqlite",
+        engine: Literal["duckdb", "sqlite", "turso"] = "sqlite",
         table: str = SCHEMA_PARAMS.DEFAULT_TABLE,
     ):
         """
@@ -116,7 +116,7 @@ class Tracker:
     def _get_engine(
         self,
         db: str,
-        engine: Literal["duckdb", "sqlite"],
+        engine: Literal["duckdb", "sqlite", "turso"],
         compress: bool = False,
         table: str = SCHEMA_PARAMS.DEFAULT_TABLE,
     ) -> Engine[Any]:
@@ -141,7 +141,18 @@ class Tracker:
                 return DuckDBEngine(db=db, compress=compress, table_name=table)
             except ImportError:
                 raise ImportError("DuckDB is not installed. Please install it with 'pip install duckdb'")
-                
+
+        if engine == "turso":
+            try:
+                from xetrack.turso import TursoEngine
+                return TursoEngine(db=db, compress=compress, table_name=table)
+            except ImportError:
+                raise ImportError(
+                    "Turso is not installed. Please install it with 'pip install xetrack[turso]' "
+                    "(package: pytursodatabase, import: turso). Note: Turso is beta — not for production."
+                )
+
+
         return SqliteEngine(db=db, compress=compress, table_name=table)
     
     @property

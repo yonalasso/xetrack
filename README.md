@@ -773,6 +773,44 @@ $ xt plot hist database.db x
 $ xt plot scatter database.db x y
 
 ```
+# Turso engine (experimental)
+
+[Turso](https://github.com/tursodatabase/turso) is a Rust rewrite of SQLite that is wire-compatible with SQLite files but adds native vector columns, `BEGIN CONCURRENT` writes, encryption, and an async API. **It is beta — do not use in production yet.** xetrack exposes it as an opt-in third engine so embedding-heavy experiments (RAG, retrieval, similarity search) can be tracked without a sidecar vector database.
+
+**Install:**
+
+```bash
+pip install xetrack[turso]
+```
+
+**Use:**
+
+```python
+from xetrack import Tracker
+
+tracker = Tracker("track.db", engine="turso")
+
+# Scalars work exactly like SQLite.
+tracker.log({"model": "bge-small", "accuracy": 0.91})
+
+# list[float] is auto-stored as a native F32_BLOB(N) vector column.
+tracker.log({"model": "bge-small", "emb": [0.11, 0.24, -0.33, 0.71]})
+
+# Query with Turso's vector functions.
+rows = tracker.conn.execute(
+    "SELECT model, vector_distance_cos(emb, vector32(?)) AS dist "
+    "FROM \"default\" WHERE emb IS NOT NULL ORDER BY dist LIMIT 5",
+    ["[0.10, 0.24, -0.30, 0.70]"],
+).fetchall()
+```
+
+**Options:** pass `embedding_dtype="f64"` to `TursoEngine` directly if you need `F64_BLOB` instead of the default `F32_BLOB`.
+
+**Docs:**
+- Repo: <https://github.com/tursodatabase/turso>
+- Docs: <https://docs.turso.tech>
+- Vector search: <https://docs.turso.tech/features/ai-and-embeddings>
+
 # SQLite vs Duckdb
 1. Dynamic Typing & Column Affinity
     * Quirk: SQLite columns have affinity (preference) rather than strict types.
