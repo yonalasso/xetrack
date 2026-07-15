@@ -22,7 +22,7 @@ import logging
 import os
 from typing import Any, List, Literal
 
-import turso  # pytursodatabase on PyPI
+import turso  # pyturso on PyPI
 
 from xetrack.engine import SqliteEngine
 from xetrack.config import SCHEMA_PARAMS, DEFAULTS

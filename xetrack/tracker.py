@@ -149,7 +149,7 @@ class Tracker:
             except ImportError:
                 raise ImportError(
                     "Turso is not installed. Please install it with 'pip install xetrack[turso]' "
-                    "(package: pytursodatabase, import: turso). Note: Turso is beta — not for production."
+                    "(package: pyturso, import: turso). Note: Turso is beta — not for production."
                 )
 
 
