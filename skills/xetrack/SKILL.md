@@ -14,6 +14,7 @@ xetrack is a lightweight experiment tracking tool. It stores metrics, parameters
 ```bash
 pip install xetrack                      # Core (SQLite)
 pip install xetrack[duckdb]              # DuckDB engine
+pip install xetrack[turso]               # Turso engine (experimental / beta — see guide below)
 pip install xetrack[cache]               # diskcache for function caching
 pip install xetrack[assets]              # sqlitedict for asset storage
 pip install xetrack[duckdb,cache,assets] # All extras
@@ -51,7 +52,7 @@ Tracker(
     compress: bool = False,              # Compress database
     warnings: bool = True,               # Show warnings
     git_root: Optional[str] = None,      # Git root for commit hash tracking
-    engine: Literal["duckdb", "sqlite"] = "sqlite",  # Database engine
+    engine: Literal["duckdb", "sqlite", "turso"] = "sqlite",  # Database engine (turso = experimental)
     table: str = "default",              # Table name for multi-experiment support
 )
 ```
@@ -407,13 +408,59 @@ copy("source.db", "target.db", assets=False)
 
 ## Engine Selection Guide
 
-| Feature | SQLite | DuckDB |
-|---|---|---|
-| Default | Yes | No (`pip install xetrack[duckdb]`) |
-| Concurrent writes | multiprocessing.Pool | ThreadPoolExecutor |
-| Table name in SQL | `"default"` (quoted) | `db.default` |
-| Best for | Local dev, single process | Analytics, parallel I/O |
-| copy() support | No | Yes |
+| Feature | SQLite | DuckDB | Turso (experimental) |
+|---|---|---|---|
+| Default | Yes | No (`pip install xetrack[duckdb]`) | **No — do not use as default** (`pip install xetrack[turso]`) |
+| Stability | Stable | Stable | **Beta — not for production** |
+| Concurrent writes | multiprocessing.Pool | ThreadPoolExecutor | `BEGIN CONCURRENT` (native) |
+| Table name in SQL | `"default"` (quoted) | `db.default` | `"default"` (SQLite-compatible) |
+| Native vector columns | No (stored as `str(list)`) | No | **Yes — `F32_BLOB(N)` / `F64_BLOB(N)`** |
+| Vector distance SQL | No | No | `vector_distance_cos()`, `vector32()`, `vector64()` |
+| Best for | Local dev, single process, everything by default | Analytics, parallel I/O | Embedding/RAG experiments where you'd otherwise stand up a vector DB |
+| copy() support | No | Yes | No |
+
+### When to reach for `engine="turso"`
+
+**Only if all of these are true:**
+
+1. Your experiment stores **embeddings** (`list[float]`) and you want to run similarity queries in SQL instead of a sidecar vector store.
+2. You are OK with a **beta database engine** — data loss is on you. Keep an SQLite mirror or export regularly if the run matters.
+3. You have **explicitly opted in** with `pip install xetrack[turso]` and `engine="turso"`. The default (SQLite) covers 99% of tracking needs.
+
+**Skip Turso for:**
+- Everyday scalar tracking (metrics, params, hyperparams) → SQLite.
+- Analytics-heavy read queries → DuckDB.
+- Anything shipped, published, or shared with users who won't know it's beta.
+- Multiprocessing writes where SQLite WAL already works — the concurrent-writes upgrade isn't worth the beta risk for most workloads.
+
+### Turso usage sketch
+
+```python
+from xetrack import Tracker
+
+tracker = Tracker("track.db", engine="turso")
+
+# Scalars work exactly like SQLite.
+tracker.log({"model": "bge-small", "accuracy": 0.91})
+
+# list[float] auto-stored as native F32_BLOB(N).
+tracker.log({"model": "bge-small", "emb": [0.11, 0.24, -0.33, 0.71]})
+
+# Similarity query via raw SQL — no wrapper API yet.
+rows = tracker.conn.execute(
+    'SELECT model, vector_distance_cos(emb, vector32(?)) AS dist '
+    'FROM "default" WHERE emb IS NOT NULL ORDER BY dist LIMIT 5',
+    ["[0.10, 0.24, -0.30, 0.70]"],
+).fetchall()
+```
+
+For `F64_BLOB` instead of the default `F32_BLOB`, construct the engine directly:
+```python
+from xetrack.turso import TursoEngine
+engine = TursoEngine(db="track.db", embedding_dtype="f64")
+```
+
+**Docs:** <https://github.com/tursodatabase/turso> · <https://docs.turso.tech> · <https://docs.turso.tech/features/ai-and-embeddings>
 
 ---
 
@@ -468,3 +515,4 @@ result = tracker.track(expensive_func, args=[data])
 4. **Dynamic schema:** Columns are added on first use. If you rename a param, xetrack creates a NEW column — the old one stays with NULLs for new rows.
 5. **Assets require sqlitedict:** `tracker.assets` is `None` unless `pip install xetrack[assets]`.
 6. **DuckDB table names:** DuckDB uses `db.tablename` syntax. The engine handles this, but raw SQL queries need to use the right format.
+7. **Turso is beta:** never make it the default; only reach for it when you specifically need native vector columns (`F32_BLOB`) and have opted in explicitly. See Engine Selection Guide.

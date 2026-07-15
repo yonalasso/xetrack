@@ -387,37 +387,44 @@ class SqliteEngine(Engine[sqlite3.Connection]):
             return True
         return False
     
+    def _sanitize_value(self, key: str, value: Any) -> tuple[str, Any]:
+        """
+        Prepare one value for insertion.
+
+        Args:
+            key: The column name the value is bound to.
+            value: The raw Python value.
+
+        Returns:
+            A (placeholder, bound_value) pair, e.g. ("?", 42).
+        """
+        # Convert complex types to string
+        if isinstance(value, (dict, list, tuple)):
+            return "?", str(value)
+        # Coerce str to int/float if needed based on schema
+        if isinstance(value, str):
+            expected_type = self.dtypes.get(key)
+            if expected_type in (int, float):
+                try:
+                    return "?", expected_type(value)
+                except ValueError:
+                    return "?", value
+        return "?", value
+
     def _insert_raw(self, data: List[tuple[list[str], list[Any], int]]) -> None:
         try:
             self.conn.execute("BEGIN TRANSACTION")
 
             for keys, values, size in data:
+                placeholders: list[str] = []
                 sanitized_values: list[Any] = []
                 for key, value in zip(keys, values):
-                    # Convert complex types to string
-                    if isinstance(value, (dict, list, tuple)):
-                        sanitized_values.append(str(value)) # type: ignore
-                    # Coerce str to int/float if needed based on schema
-                    elif isinstance(value, str):
-                        expected_type = self.dtypes.get(key)
-                        if expected_type == int:
-                            try:
-                                sanitized_values.append(int(value))
-                            except ValueError:
-                                sanitized_values.append(value)
-                        elif expected_type == float:
-                            try:
-                                sanitized_values.append(float(value))
-                            except ValueError:
-                                sanitized_values.append(value)
-                        else:
-                            sanitized_values.append(value)
-                    else:
-                        sanitized_values.append(value)
+                    placeholder, bound = self._sanitize_value(key, value)
+                    placeholders.append(placeholder)
+                    sanitized_values.append(bound)
 
-                placeholders = ', '.join(['?' for _ in range(size)])
                 quoted_table_name = self._quote_table_name(self.table_name)
-                query = f"INSERT INTO {quoted_table_name} ({', '.join(keys)}) VALUES ({placeholders})"
+                query = f"INSERT INTO {quoted_table_name} ({', '.join(keys)}) VALUES ({', '.join(placeholders)})"
 
                 self.conn.execute(query, sanitized_values)
 

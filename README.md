@@ -806,6 +806,8 @@ rows = tracker.conn.execute(
 
 **Options:** pass `embedding_dtype="f64"` to `TursoEngine` directly if you need `F64_BLOB` instead of the default `F32_BLOB`.
 
+**Constraints:** the embedding column is created with the dimension of the *first* value logged (e.g. `F32_BLOB(4)`); logging a different dimension to the same column raises at insert time. Numeric lists with at least one float are treated as embeddings; pure-int lists are stored as TEXT like on the SQLite engine. Convert numpy arrays with `.tolist()` first.
+
 **Docs:**
 - Repo: <https://github.com/tursodatabase/turso>
 - Docs: <https://docs.turso.tech>
